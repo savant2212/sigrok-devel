@@ -92,18 +92,23 @@ SR_PRIV int set_capture_ratio(struct dev_context *devc, uint64_t ratio)
 	return SR_OK;
 }
 
-SR_PRIV int set_voltage_threshold(struct dev_context *devc, double thresh)
+SR_PRIV int set_voltage_threshold(struct dev_context *devc, int channel, double thresh)
 {
 	if (thresh > 6.0)
 		thresh = 6.0;
 	if (thresh < -6.0)
 		thresh = -6.0;
+	
+	if( channel >= ZEROPLUS_MAX_CHANNEL ){
+		sr_err("Invalid channel %d", channel);
+		return SR_ERR_ARG;
+	}
+	
+	devc->cur_thresholds[channel] = thresh;
 
-	devc->cur_threshold = thresh;
+	analyzer_set_voltage_threshold(channel, (int) round(-9.1*thresh + 62.6));
 
-	analyzer_set_voltage_threshold((int) round(-9.1*thresh + 62.6));
-
-	sr_info("Setting voltage threshold to %fV.", devc->cur_threshold);
+	sr_info("Setting voltage threshold to %fV.", devc->cur_thresholds[channel]);
 
 	return SR_OK;
 }

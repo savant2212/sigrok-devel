@@ -365,8 +365,10 @@ static int dev_open(struct sr_dev_inst *sdi)
 		devc->cur_samplerate = SR_MHZ(1);
 	}
 
-	if (devc->cur_threshold == 0)
-		set_voltage_threshold(devc, 1.5);
+	for( i=0; i < devc->num_channels; i++ ) {
+		if( devc->cur_thresholds[i] == 0 )
+			set_voltage_threshold(devc, i, 1.5);
+	}
 
 	return SR_OK;
 }
@@ -400,7 +402,7 @@ static int config_get(uint32_t key, GVariant **data, const struct sr_dev_inst *s
 		const struct sr_channel_group *cg)
 {
 	struct dev_context *devc;
-
+	int i;
 	(void)cg;
 
 	switch (key) {
@@ -422,11 +424,16 @@ static int config_get(uint32_t key, GVariant **data, const struct sr_dev_inst *s
 		break;
 	case SR_CONF_VOLTAGE_THRESHOLD:
 		if (sdi) {
-			GVariant *range[2];
+			GVariant *range[3];
+			GVariant *channels[ZEROPLUS_MAX_CHANNEL];
 			devc = sdi->priv;
-			range[0] = g_variant_new_double(devc->cur_threshold);
-			range[1] = g_variant_new_double(devc->cur_threshold);
-			*data = g_variant_new_tuple(range, 2);
+			for(i=0; i < devc->num_channels; i++ ){
+				range[0] = g_variant_new_byte(i);
+				range[1] = g_variant_new_double(devc->cur_thresholds[i]);
+				range[2] = g_variant_new_double(devc->cur_thresholds[i]);
+				channels[i] = g_variant_new_tuple(range,3);
+			}
+			*data = g_variant_new_tuple(range, 3);
 		} else
 			return SR_ERR_ARG;
 		break;

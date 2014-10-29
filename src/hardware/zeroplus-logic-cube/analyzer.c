@@ -118,7 +118,8 @@ static int g_memory_size = MEMORY_SIZE_8K;
 static int g_ramsize_triggerbar_addr = 2 * 1024;
 static int g_triggerbar_addr = 0;
 static int g_compression = COMPRESSION_NONE;
-static int g_thresh = 0x31; /* 1.5V */
+//static int g_thresh = 0x31; /* 1.5V */
+static int g_chan_thresh[4] = {0x31};
 
 /* Maybe unk specifies an "endpoint" or "register" of sorts. */
 static int analyzer_write_status(libusb_device_handle *devh, unsigned char unk,
@@ -466,10 +467,10 @@ SR_PRIV void analyzer_configure(libusb_device_handle *devh)
 	__analyzer_set_trigger_count(devh, g_trigger_count);
 
 	/* Set_Trigger_Level */
-	gl_reg_write(devh, TRIGGER_LEVEL0, g_thresh);
-	gl_reg_write(devh, TRIGGER_LEVEL1, g_thresh);
-	gl_reg_write(devh, TRIGGER_LEVEL2, g_thresh);
-	gl_reg_write(devh, TRIGGER_LEVEL3, g_thresh);
+	gl_reg_write(devh, TRIGGER_LEVEL0, g_chan_thresh[0]);
+	gl_reg_write(devh, TRIGGER_LEVEL1, g_chan_thresh[1]);
+	gl_reg_write(devh, TRIGGER_LEVEL2, g_chan_thresh[2]);
+	gl_reg_write(devh, TRIGGER_LEVEL3, g_chan_thresh[3]);
 
 	/* Size of actual memory >> 2 */
 	__analyzer_set_ramsize_trigger_address(devh, g_ramsize_triggerbar_addr);
@@ -627,9 +628,13 @@ SR_PRIV void analyzer_set_compression(unsigned int type)
 	g_compression = type;
 }
 
-SR_PRIV void analyzer_set_voltage_threshold(int thresh)
+SR_PRIV void analyzer_set_voltage_threshold(int channel, int thresh)
 {
-	g_thresh = thresh;
+	if( channel > 3 ) {
+		sr_err("Invalid channel");
+		return;
+	}
+	g_chan_thresh[channel] = thresh;
 }
 
 SR_PRIV void analyzer_wait_button(libusb_device_handle *devh)
