@@ -192,5 +192,6 @@ ATTRS{idVendor}=="0c12", ATTRS{idProduct}=="700c", MODE="664", GROUP="plugdev"
 ATTRS{idVendor}=="0c12", ATTRS{idProduct}=="700d", MODE="664", GROUP="plugdev"
 ATTRS{idVendor}=="0c12", ATTRS{idProduct}=="700e", MODE="664", GROUP="plugdev"
 ATTRS{idVendor}=="0c12", ATTRS{idProduct}=="7016", MODE="664", GROUP="plugdev"
+ATTRS{idVendor}=="0c12", ATTRS{idProduct}=="7100", MODE="664", GROUP="plugdev"
 
 LABEL="libsigrok_rules_end"
