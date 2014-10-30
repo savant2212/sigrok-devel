@@ -31,7 +31,8 @@
 
 #define LOG_PREFIX "zeroplus"
 
-#define ZEROPLUS_MAX_CHANNEL 4
+#define ZEROPLUS_MAX_PORTS 4
+#define ZEROPLUS_CHANNELS_PER_PORT 8
 
 /* Private, per-device-instance driver context. */
 struct dev_context {
@@ -39,6 +40,7 @@ struct dev_context {
 	uint64_t max_samplerate;
 	uint64_t limit_samples;
 	int num_channels;
+	int num_ports;
 	int memory_size;
 	unsigned int max_sample_depth;
 	//uint8_t channel_mask;
@@ -47,7 +49,7 @@ struct dev_context {
 	// uint8_t trigger_buffer[NUM_TRIGGER_STAGES];
 	int trigger;
 	unsigned int capture_ratio;
-	double cur_thresholds[ZEROPLUS_MAX_CHANNEL];
+	double cur_thresholds[ZEROPLUS_MAX_PORTS];
 	const struct zp_model *prof;
 };
 

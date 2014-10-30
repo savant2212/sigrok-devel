@@ -92,23 +92,23 @@ SR_PRIV int set_capture_ratio(struct dev_context *devc, uint64_t ratio)
 	return SR_OK;
 }
 
-SR_PRIV int set_voltage_threshold(struct dev_context *devc, int channel, double thresh)
+SR_PRIV int set_voltage_threshold(struct dev_context *devc, int port, double thresh)
 {
 	if (thresh > 6.0)
 		thresh = 6.0;
 	if (thresh < -6.0)
 		thresh = -6.0;
 	
-	if( channel >= ZEROPLUS_MAX_CHANNEL ){
-		sr_err("Invalid channel %d", channel);
+	if( port >= ZEROPLUS_MAX_PORTS ){
+		sr_err("Invalid port %d", port);
 		return SR_ERR_ARG;
 	}
 	
-	devc->cur_thresholds[channel] = thresh;
+	devc->cur_thresholds[port] = thresh;
 
-	analyzer_set_voltage_threshold(channel, (int) round(-9.1*thresh + 62.6));
+	analyzer_set_voltage_threshold(port, (int) round(-9.1*thresh + 62.6));
 
-	sr_info("Setting voltage threshold to %fV.", devc->cur_thresholds[channel]);
+	sr_info("Setting voltage threshold to %fV on port %d.", devc->cur_thresholds[port], port);
 
 	return SR_OK;
 }

@@ -36,6 +36,10 @@ struct zp_model {
 	unsigned int max_sampling_freq;
 };
 
+struct zp_port {
+	int id;
+};
+
 /*
  * Note -- 16032, 16064 and 16128 *usually* -- but not always -- have the
  * same 128K sample depth.
@@ -59,6 +63,7 @@ static const uint32_t devopts[] = {
 	SR_CONF_SAMPLERATE | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
 	SR_CONF_TRIGGER_MATCH | SR_CONF_LIST,
 	SR_CONF_CAPTURE_RATIO | SR_CONF_GET | SR_CONF_SET,
+//	SR_CONF_PER_PORT_CONFIGURATION | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
 	SR_CONF_VOLTAGE_THRESHOLD | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
 };
 
@@ -165,6 +170,7 @@ static GSList *scan(GSList *options)
 {
 	struct sr_dev_inst *sdi;
 	struct sr_channel *ch;
+	struct sr_channel_group *porta=NULL, *portb=NULL, *portc=NULL, *portd=NULL;
 	struct drv_context *drvc;
 	struct dev_context *devc;
 	const struct zp_model *prof;
@@ -240,6 +246,7 @@ static GSList *scan(GSList *options)
 		sdi->priv = devc;
 		devc->prof = prof;
 		devc->num_channels = prof->channels;
+		devc->num_ports = (devc->num_channels / ZEROPLUS_CHANNELS_PER_PORT);
 #ifdef ZP_EXPERIMENTAL
 		devc->max_sample_depth = 128 * 1024;
 		devc->max_samplerate = 200;
@@ -250,6 +257,31 @@ static GSList *scan(GSList *options)
 		devc->max_samplerate *= SR_MHZ(1);
 		devc->memory_size = MEMORY_SIZE_8K;
 		// memset(devc->trigger_buffer, 0, NUM_TRIGGER_STAGES);
+		
+		if( devc->num_ports > 0 ) {
+			porta = g_malloc0(sizeof(struct sr_channel_group));
+			porta->name = g_strdup("PORT A");
+			porta->priv = g_malloc0(sizeof(struct zp_port));
+			((struct zp_port*)porta->priv)->id = 0;
+		}
+		if( devc->num_ports > 1 ) {
+			portb = g_malloc0(sizeof(struct sr_channel_group));
+			portb->name = g_strdup("PORT B");
+			portb->priv = g_malloc0(sizeof(struct zp_port));
+			((struct zp_port*)portb->priv)->id = 1;
+		}
+		if( devc->num_ports > 2 ) {
+			portc = g_malloc0(sizeof(struct sr_channel_group));
+			portc->name = g_strdup("PORT C");
+			portc->priv = g_malloc0(sizeof(struct zp_port));
+			((struct zp_port*)portc->priv)->id = 2;
+		}
+		if( devc->num_ports > 3 ) {
+			portd = g_malloc0(sizeof(struct sr_channel_group));
+			portd->name = g_strdup("PORT D");
+			portd->priv = g_malloc0(sizeof(struct zp_port));
+			((struct zp_port*)portd->priv)->id = 3;
+		}
 
 		/* Fill in channellist according to this device's profile. */
 		for (j = 0; j < devc->num_channels; j++) {
@@ -257,8 +289,38 @@ static GSList *scan(GSList *options)
 					channel_names[j])))
 				return NULL;
 			sdi->channels = g_slist_append(sdi->channels, ch);
+			switch( j / 8 ){
+				case 0:
+					porta->channels = g_slist_append( porta->channels, ch);
+					break;
+				case 1:
+					portb->channels = g_slist_append( portb->channels, ch);
+					break;
+				case 2:
+					portc->channels = g_slist_append( portc->channels, ch);
+					break;
+				case 3:
+					portd->channels = g_slist_append( portd->channels, ch);
+					break;
+				default:
+					return NULL;
+					break;
+			}
 		}
-
+		
+		if( porta != NULL ) {
+			sdi->channel_groups = g_slist_append( sdi->channel_groups, porta );
+		}
+		if( portb != NULL ) {
+			sdi->channel_groups = g_slist_append( sdi->channel_groups, portb );
+		}
+		if( portc != NULL ) {
+			sdi->channel_groups = g_slist_append( sdi->channel_groups, portc );
+		}
+		if( portd != NULL ) {
+			sdi->channel_groups = g_slist_append( sdi->channel_groups, portd );
+		}
+		
 		devices = g_slist_append(devices, sdi);
 		drvc->instances = g_slist_append(drvc->instances, sdi);
 		sdi->inst_type = SR_INST_USB;
@@ -365,7 +427,7 @@ static int dev_open(struct sr_dev_inst *sdi)
 		devc->cur_samplerate = SR_MHZ(1);
 	}
 
-	for( i=0; i < devc->num_channels; i++ ) {
+	for( i=0; i < devc->num_ports; i++ ) {
 		if( devc->cur_thresholds[i] == 0 )
 			set_voltage_threshold(devc, i, 1.5);
 	}
@@ -402,45 +464,41 @@ static int config_get(uint32_t key, GVariant **data, const struct sr_dev_inst *s
 		const struct sr_channel_group *cg)
 {
 	struct dev_context *devc;
-	int i;
-	(void)cg;
+	struct zp_port *port_info;
 
-	switch (key) {
-	case SR_CONF_SAMPLERATE:
-		if (sdi) {
-			devc = sdi->priv;
-			*data = g_variant_new_uint64(devc->cur_samplerate);
-			sr_spew("Returning samplerate: %" PRIu64 "Hz.",
-				devc->cur_samplerate);
-		} else
-			return SR_ERR_ARG;
-		break;
-	case SR_CONF_CAPTURE_RATIO:
-		if (sdi) {
-			devc = sdi->priv;
-			*data = g_variant_new_uint64(devc->capture_ratio);
-		} else
-			return SR_ERR_ARG;
-		break;
-	case SR_CONF_VOLTAGE_THRESHOLD:
-		if (sdi) {
-			GVariant *range[3];
-			GVariant *channels[ZEROPLUS_MAX_CHANNEL];
-			devc = sdi->priv;
-			for(i=0; i < devc->num_channels; i++ ){
-				range[0] = g_variant_new_byte(i);
-				range[1] = g_variant_new_double(devc->cur_thresholds[i]);
-				range[2] = g_variant_new_double(devc->cur_thresholds[i]);
-				channels[i] = g_variant_new_tuple(range,3);
-			}
-			*data = g_variant_new_tuple(range, 3);
-		} else
-			return SR_ERR_ARG;
-		break;
-	default:
-		return SR_ERR_NA;
-	}
-
+		switch (key) {
+		case SR_CONF_SAMPLERATE:
+			if (sdi) {
+				devc = sdi->priv;
+				*data = g_variant_new_uint64(devc->cur_samplerate);
+				sr_spew("Returning samplerate: %" PRIu64 "Hz.",
+					devc->cur_samplerate);
+			} else
+				return SR_ERR_ARG;
+			break;
+		case SR_CONF_CAPTURE_RATIO:
+			if (sdi) {
+				devc = sdi->priv;
+				*data = g_variant_new_uint64(devc->capture_ratio);
+			} else
+				return SR_ERR_ARG;
+			break;
+		case SR_CONF_VOLTAGE_THRESHOLD:
+			if( !cg ) 
+				return SR_ERR_CHANNEL_GROUP;
+			port_info = cg->priv;
+			if (sdi) {
+				GVariant *range[2];
+				devc = sdi->priv;
+				range[0] = g_variant_new_double(devc->cur_thresholds[port_info->id]);
+				range[1] = g_variant_new_double(devc->cur_thresholds[port_info->id]);
+				*data = g_variant_new_tuple(range, 2);
+			} else
+				return SR_ERR_ARG;
+			break;
+		default:
+			return SR_ERR_NA;
+		}
 	return SR_OK;
 }
 
@@ -449,8 +507,7 @@ static int config_set(uint32_t key, GVariant *data, const struct sr_dev_inst *sd
 {
 	struct dev_context *devc;
 	gdouble low, high;
-
-	(void)cg;
+	struct zp_port *port_info;
 
 	if (sdi->status != SR_ST_ACTIVE)
 		return SR_ERR_DEV_CLOSED;
@@ -459,20 +516,23 @@ static int config_set(uint32_t key, GVariant *data, const struct sr_dev_inst *sd
 		sr_err("%s: sdi->priv was NULL", __func__);
 		return SR_ERR_ARG;
 	}
-
-	switch (key) {
-	case SR_CONF_SAMPLERATE:
-		return zp_set_samplerate(devc, g_variant_get_uint64(data));
-	case SR_CONF_LIMIT_SAMPLES:
-		return set_limit_samples(devc, g_variant_get_uint64(data));
-	case SR_CONF_CAPTURE_RATIO:
-		return set_capture_ratio(devc, g_variant_get_uint64(data));
-	case SR_CONF_VOLTAGE_THRESHOLD:
-		g_variant_get(data, "(dd)", &low, &high);
-		return set_voltage_threshold(devc, (low + high) / 2.0);
-	default:
-		return SR_ERR_NA;
-	}
+		switch (key) {
+		case SR_CONF_SAMPLERATE:
+			return zp_set_samplerate(devc, g_variant_get_uint64(data));
+		case SR_CONF_LIMIT_SAMPLES:
+			return set_limit_samples(devc, g_variant_get_uint64(data));
+		case SR_CONF_CAPTURE_RATIO:
+			return set_capture_ratio(devc, g_variant_get_uint64(data));
+		
+		case SR_CONF_VOLTAGE_THRESHOLD:
+			if( !cg )
+				return SR_ERR_CHANNEL_GROUP;
+			port_info = cg->priv;
+			g_variant_get(data, "(dd)", &low, &high);
+			return set_voltage_threshold(devc, port_info->id, (low + high) / 2.0);
+		default:
+			return SR_ERR_NA;
+		}
 
 	return SR_OK;
 }
@@ -486,57 +546,63 @@ static int config_list(uint32_t key, GVariant **data, const struct sr_dev_inst *
 	double v;
 	GVariant *range[2];
 
-	(void)cg;
-
-	switch (key) {
-	case SR_CONF_DEVICE_OPTIONS:
-		*data = g_variant_new_fixed_array(G_VARIANT_TYPE_UINT32,
-				devopts, ARRAY_SIZE(devopts), sizeof(uint32_t));
-		break;
-	case SR_CONF_SAMPLERATE:
-		devc = sdi->priv;
-		g_variant_builder_init(&gvb, G_VARIANT_TYPE("a{sv}"));
-		if (devc->prof->max_sampling_freq == 100) {
-			gvar = g_variant_new_fixed_array(G_VARIANT_TYPE("t"),
-					samplerates_100, ARRAY_SIZE(samplerates_100),
-					sizeof(uint64_t));
-		} else if (devc->prof->max_sampling_freq == 200) {
-			gvar = g_variant_new_fixed_array(G_VARIANT_TYPE("t"),
-					samplerates_200, ARRAY_SIZE(samplerates_200),
-					sizeof(uint64_t));
-		} else {
-			sr_err("Internal error: Unknown max. samplerate: %d.",
-			       devc->prof->max_sampling_freq);
-			return SR_ERR_ARG;
+	if(!cg) {
+		switch (key) {
+		case SR_CONF_DEVICE_OPTIONS:
+			*data = g_variant_new_fixed_array(G_VARIANT_TYPE_UINT32,
+					devopts, ARRAY_SIZE(devopts), sizeof(uint32_t));
+			break;
+		case SR_CONF_SAMPLERATE:
+			devc = sdi->priv;
+			g_variant_builder_init(&gvb, G_VARIANT_TYPE("a{sv}"));
+			if (devc->prof->max_sampling_freq == 100) {
+				gvar = g_variant_new_fixed_array(G_VARIANT_TYPE("t"),
+						samplerates_100, ARRAY_SIZE(samplerates_100),
+						sizeof(uint64_t));
+			} else if (devc->prof->max_sampling_freq == 200) {
+				gvar = g_variant_new_fixed_array(G_VARIANT_TYPE("t"),
+						samplerates_200, ARRAY_SIZE(samplerates_200),
+						sizeof(uint64_t));
+			} else {
+				sr_err("Internal error: Unknown max. samplerate: %d.",
+				       devc->prof->max_sampling_freq);
+				return SR_ERR_ARG;
+			}
+			g_variant_builder_add(&gvb, "{sv}", "samplerates", gvar);
+			*data = g_variant_builder_end(&gvb);
+			break;
+		case SR_CONF_TRIGGER_MATCH:
+			*data = g_variant_new_fixed_array(G_VARIANT_TYPE_INT32,
+					trigger_matches, ARRAY_SIZE(trigger_matches),
+					sizeof(int32_t));
+			break;
+		
+		case SR_CONF_LIMIT_SAMPLES:
+			if (!sdi)
+				return SR_ERR_ARG;
+			devc = sdi->priv;
+			grange[0] = g_variant_new_uint64(0);
+			grange[1] = g_variant_new_uint64(devc->max_sample_depth);
+			*data = g_variant_new_tuple(grange, 2);
+			break;
+		default:
+			return SR_ERR_NA;
 		}
-		g_variant_builder_add(&gvb, "{sv}", "samplerates", gvar);
-		*data = g_variant_builder_end(&gvb);
-		break;
-	case SR_CONF_TRIGGER_MATCH:
-		*data = g_variant_new_fixed_array(G_VARIANT_TYPE_INT32,
-				trigger_matches, ARRAY_SIZE(trigger_matches),
-				sizeof(int32_t));
-		break;
-	case SR_CONF_VOLTAGE_THRESHOLD:
-		g_variant_builder_init(&gvb, G_VARIANT_TYPE_ARRAY);
-		for (v = -6.0; v <= 6.0; v += 0.1) {
-			range[0] = g_variant_new_double(v);
-			range[1] = g_variant_new_double(v);
-			gvar = g_variant_new_tuple(range, 2);
-			g_variant_builder_add_value(&gvb, gvar);
+	} else {
+		switch(key) {
+			case SR_CONF_VOLTAGE_THRESHOLD:
+				g_variant_builder_init(&gvb, G_VARIANT_TYPE_ARRAY);
+				for (v = -6.0; v <= 6.0; v += 0.1) {
+					range[0] = g_variant_new_double(v);
+					range[1] = g_variant_new_double(v);
+					gvar = g_variant_new_tuple(range, 2);
+					g_variant_builder_add_value(&gvb, gvar);
+				}
+				*data = g_variant_builder_end(&gvb);
+				break;
+			default:
+				return SR_ERR_NA;
 		}
-		*data = g_variant_builder_end(&gvb);
-		break;
-	case SR_CONF_LIMIT_SAMPLES:
-		if (!sdi)
-			return SR_ERR_ARG;
-		devc = sdi->priv;
-		grange[0] = g_variant_new_uint64(0);
-		grange[1] = g_variant_new_uint64(devc->max_sample_depth);
-		*data = g_variant_new_tuple(grange, 2);
-		break;
-	default:
-		return SR_ERR_NA;
 	}
 
 	return SR_OK;
